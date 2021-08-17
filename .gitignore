@@ -1,0 +1,16 @@
+.DS_Store
+*.zip
+*log
+# python
+*.py[cod]
+__pycache__
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw*
+*.xlsx
+changelog
