@@ -8,7 +8,6 @@
 # -----------------------------------------------------------------------------
 # Imports
 # -----------------------------------------------------------------------------
-import datetime
 import time
 from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -28,15 +27,9 @@ scheduler = BlockingScheduler()  # 后台运行
 
 
 def run():
+    """定时任务 每天15.30 聚合多周期k线"""
     aggregatecandleline = AggregateCandleline()
-    # 5分钟
     tables = DBCONN.get_tables()
-    start_time = datetime.datetime.strptime(str(datetime.datetime.now().date()) + '9:30', '%Y-%m-%d%H:%M')
-    end_time = datetime.datetime.strptime(str(datetime.datetime.now().date()) + '15:30', '%Y-%m-%d%H:%M')
-    # 当前时间
-    now_time = datetime.datetime.now()
-
-    # 判断当前时间是否在范围时间内
     for i in tables:
         aggregatecandleline.generate_minute_period_candleline(i,
                                                               int(str(
@@ -64,8 +57,6 @@ def run():
                                                               5)
 
 
-scheduler.add_job(run, 'cron', day="*", hour=15, minute=30)
-scheduler.start()
 # -----------------------------------------------------------------------------
 # Functions
 # -----------------------------------------------------------------------------
@@ -78,3 +69,6 @@ scheduler.start()
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
+if __name__ == '__main__':
+    scheduler.add_job(run, 'cron', day="*", hour=15, minute=30)
+    scheduler.start()
