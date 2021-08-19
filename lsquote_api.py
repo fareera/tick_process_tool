@@ -1,25 +1,30 @@
 import abc
 import asyncio
 import copy
+from collections import namedtuple
 import logging
 import time
 import struct
 import threading
-from collections import namedtuple
-
-from utils.engine import EngineManager
-from utils.pyquote_type import SubscribeItem, QuoteType
-from utils.write_logs import WriteLogs
-
 
 class QuoteType(object):
     kSnapshot = 0x00000001
+
+
+class SymbolType(object):
+    kUnknown    = 'U'
+    kStock      = 'S'
+    kBond       = 'B'
+    kFuture     = 'F'
+    kOption     = 'O'
+    kSpot       = 's'
 
 
 class SubscribeItem(object):
     def __init__(self) -> None:
         self._quote_type = None
         self._symbol_id = None
+        self._symbol_type = None
         self._bar_period = 0
 
     @property
@@ -39,6 +44,14 @@ class SubscribeItem(object):
         self._symbol_id = value
 
     @property
+    def symbol_type(self):
+        return self._symbol_type
+
+    @symbol_type.setter
+    def symbol_type(self, value: str):
+        self._symbol_type = value
+
+    @property
     def bar_period(self):
         return self._bar_period
 
@@ -47,88 +60,89 @@ class SubscribeItem(object):
         self._bar_period = value
 
     def pack(self) -> bytes:
-        return struct.pack('I32sI', self._quote_type, self._symbol_id.encode(), self._bar_period)
+        return struct.pack('I32ssI', self._quote_type, self._symbol_id.encode(), self._symbol_type.encode(), self._bar_period)
 
     @staticmethod
     def load(buffer):
         print(f'Loading SubscribeItem from buffer, {len(buffer)}')
-        fmt = 'I32sI'
+        fmt = 'I32ssI'
         si = SubscribeItem()
-        si.quote_type, si.symbol_id, si.bar_period = struct.unpack(fmt, buffer)
+        si.quote_type, si.symbol_id, si.symbol_type, si.bar_period = struct.unpack(fmt, buffer)
         return si
 
 
 SymbolSnapshotStruct = (
-    ('trading_phase', 'H'),
-    ('cn_calendar_day', 'I'),
-    ('cn_trading_day', 'I'),
-    ('symbol_id', '32s'),
-    ('cn_exchange_time', 'Q'),
-    ('local_exchange_time', 'Q'),
-    ('pre_close_price', 'd'),
-    ('open_price', 'd'),
-    ('high_price', 'd'),
-    ('low_price', 'd'),
-    ('last_price', 'd'),
-    ('up_limit_price', 'd'),
-    ('down_limit_price', 'd'),
+    ('trading_phase',        'H'),
+    ('cn_calendar_day',      'I'),
+    ('cn_trading_day',       'I'),
+    ('symbol_id',          '32s'),
+    ('symbol_type',          's'),
+    ('cn_exchange_time',     'Q'),
+    ('local_exchange_time',  'Q'),
+    ('pre_close_price',      'd'),
+    ('open_price',           'd'),
+    ('high_price',           'd'),
+    ('low_price',            'd'),
+    ('last_price',           'd'),
+    ('up_limit_price',       'd'),
+    ('down_limit_price',     'd'),
 
-    ('bid_px1', 'd'),
-    ('bid_px2', 'd'),
-    ('bid_px3', 'd'),
-    ('bid_px4', 'd'),
-    ('bid_px5', 'd'),
-    ('bid_px6', 'd'),
-    ('bid_px7', 'd'),
-    ('bid_px8', 'd'),
-    ('bid_px9', 'd'),
-    ('bid_px10', 'd'),
-    ('bid_vol1', 'd'),
-    ('bid_vol2', 'd'),
-    ('bid_vol3', 'd'),
-    ('bid_vol4', 'd'),
-    ('bid_vol5', 'd'),
-    ('bid_vol6', 'd'),
-    ('bid_vol7', 'd'),
-    ('bid_vol8', 'd'),
-    ('bid_vol9', 'd'),
-    ('bid_vol10', 'd'),
+    ('bid_px1',              'd'),
+    ('bid_px2',              'd'),
+    ('bid_px3',              'd'),
+    ('bid_px4',              'd'),
+    ('bid_px5',              'd'),
+    ('bid_px6',              'd'),
+    ('bid_px7',              'd'),
+    ('bid_px8',              'd'),
+    ('bid_px9',              'd'),
+    ('bid_px10',             'd'),
+    ('bid_vol1',             'd'),
+    ('bid_vol2',             'd'),
+    ('bid_vol3',             'd'),
+    ('bid_vol4',             'd'),
+    ('bid_vol5',             'd'),
+    ('bid_vol6',             'd'),
+    ('bid_vol7',             'd'),
+    ('bid_vol8',             'd'),
+    ('bid_vol9',             'd'),
+    ('bid_vol10',            'd'),
+ 
+    ('ask_px1',              'd'),
+    ('ask_px2',              'd'),
+    ('ask_px3',              'd'),
+    ('ask_px4',              'd'),
+    ('ask_px5',              'd'),
+    ('ask_px6',              'd'),
+    ('ask_px7',              'd'),
+    ('ask_px8',              'd'),
+    ('ask_px9',              'd'),
+    ('ask_px10',             'd'),
+    ('ask_vol1',             'd'),
+    ('ask_vol2',             'd'),
+    ('ask_vol3',             'd'),
+    ('ask_vol4',             'd'),
+    ('ask_vol5',             'd'),
+    ('ask_vol6',             'd'),
+    ('ask_vol7',             'd'),
+    ('ask_vol8',             'd'),
+    ('ask_vol9',             'd'),
+    ('ask_vol10',            'd'),
 
-    ('ask_px1', 'd'),
-    ('ask_px2', 'd'),
-    ('ask_px3', 'd'),
-    ('ask_px4', 'd'),
-    ('ask_px5', 'd'),
-    ('ask_px6', 'd'),
-    ('ask_px7', 'd'),
-    ('ask_px8', 'd'),
-    ('ask_px9', 'd'),
-    ('ask_px10', 'd'),
-    ('ask_vol1', 'd'),
-    ('ask_vol2', 'd'),
-    ('ask_vol3', 'd'),
-    ('ask_vol4', 'd'),
-    ('ask_vol5', 'd'),
-    ('ask_vol6', 'd'),
-    ('ask_vol7', 'd'),
-    ('ask_vol8', 'd'),
-    ('ask_vol9', 'd'),
-    ('ask_vol10', 'd'),
-
-    ('turnover', 'd'),
-    ('volume', 'd'),
+    ('turnover',             'd'),
+    ('volume',               'd'),
 
     # Future-symbol only
-    ('pre_settelement_price', 'd'),
-    ('settlement_price', 'd'),
-    ('open_interest', 'd'),
+    ('pre_settelement_price','d'),
+    ('settlement_price',     'd'),
+    ('open_interest',        'd'),
 
     # Option-symbol only
-    ('strike_price', 'd'),
-    ('delta', 'd'),
-    ('gamma', 'd'),
-    ('vega', 'd'),
-    ('theta', 'd')
+    ('strike_price',         'd'),
+    ('delta',                'd'),
+    ('gamma',                'd'),
+    ('vega',                 'd'),
+    ('theta',                'd')
 )
 
 SymbolSnapshot = namedtuple('SymbolSnapshot', (x[0] for x in SymbolSnapshotStruct))
@@ -234,10 +248,11 @@ class MWTCPProtocol(asyncio.Protocol, metaclass=abc.ABCMeta):
     def parseValidation(self, bdata):
         if len(bdata) < self._validation_len:
             return None
-
+        
         self._validation_in = struct.unpack('Q', bdata[0:self._validation_len])[0]
         self._validation_out.extend(struct.pack('Q', self.scramble(self._validation_in)))
         return bdata[self._validation_len:]
+        
 
     def data_received(self, bdata):
         """Doc."""
@@ -252,6 +267,7 @@ class MWTCPProtocol(asyncio.Protocol, metaclass=abc.ABCMeta):
                 self._buffer.clear()
                 self._buffer.extend(res)
                 self._validated = True
+
 
         res = self.parseBytes(self._buffer)
 
@@ -283,7 +299,6 @@ class MWTCPProtocol(asyncio.Protocol, metaclass=abc.ABCMeta):
     def onMessage(self, msg_type_id, msg):
         pass
 
-
 class Client(MWTCPProtocol):
     """Doc."""
 
@@ -305,25 +320,25 @@ class Client(MWTCPProtocol):
 
 class MessageType(object):
     # Push
-    kSnapshot = 0xF0000001
+    kSnapshot                = 0xF0000001
 
     # Directive 
-    kSubscribe = 0xD0001000
-    kSubscribeStreaming = 0xD0001001
-    kUnSubscribe = 0xD0001002
-    kUnSubscribeAll = 0xD0001003  # 取消订阅该Client所有订阅的合约
-    kUnSubscribeStreaming = 0xD0001004
+    kSubscribe               = 0xD0001000
+    kSubscribeStreaming      = 0xD0001001
+    kUnSubscribe             = 0xD0001002
+    kUnSubscribeAll          = 0xD0001003      # 取消订阅该Client所有订阅的合约
+    kUnSubscribeStreaming    = 0xD0001004
 
     # Answer
-    kRspSubscribe = 0xA0001000
-    kRspSubscribeStreaming = 0xA0001001
-    kRspUnSubscribe = 0xA0001002
-    kRspUnSubscribeAll = 0xA0001003
+    kRspSubscribe            = 0xA0001000
+    kRspSubscribeStreaming   = 0xA0001001
+    kRspUnSubscribe          = 0xA0001002
+    kRspUnSubscribeAll       = 0xA0001003
     kRspUnSubscribeStreaming = 0xA0001004
 
 
 class Message(object):
-    def __init__(self, msg_type_id: int):
+    def __init__(self, msg_type_id:int):
         self.msg_type_id = msg_type_id
         self.size = 0
         self.buffer = bytearray()
@@ -331,7 +346,7 @@ class Message(object):
     def push(self, bdata: bytes):
         self.buffer.extend(bdata)
         self.size += len(bdata)
-
+    
     def pack(self):
         bdata_send = struct.pack('II', self.msg_type_id, self.size) + self.buffer
         print(f'Packing message: {self.msg_type_id}, {self.size}, {bdata_send}, {len(bdata_send)}')
@@ -369,7 +384,7 @@ class LSQuoteApi(threading.Thread):
 
     def get_all_quote_cache(self):
         self.quote_cache_lock.acquire()
-
+        
         cache = copy.deepcopy(self.quote_cache)
 
         self.quote_cache_lock.release()
@@ -385,11 +400,11 @@ class LSQuoteApi(threading.Thread):
             cache = copy.deepcopy(self.quote_cache[symbol_id])
 
         self.quote_cache_lock.release()
-
+        
         return cache
 
     def _on_message(self, msg_type_id, msg):
-        # print(f'Recvd message: {msg=}, {len(msg)=}')
+        # print(f'Recvd message: {msg}, {len(msg)}')
         self.quote_cache_lock.acquire()
 
         if MessageType.kSnapshot == msg_type_id:
@@ -430,7 +445,7 @@ class LSQuoteApi(threading.Thread):
         #     # 临时方案，改为从db获取存到mem后根据symbol_id匹配
         #     k = symbol_id.split('.')[0].split('-')[-1]
         #     opt = opt._replace(strike_price=k)
-
+            
         #     # Locally cache the quote
         #     self.quote_cache[symbol_id] = opt
 
@@ -465,7 +480,7 @@ class LSQuoteApi(threading.Thread):
 
             if __debug__:
                 print(f'收到订阅行情流的回复, {error_no}')
-
+        
         elif MessageType.kRspUnSubscribeStreaming == msg_type_id:
             fmt = 'q'
             error_no = struct.unpack(fmt, msg)[0]
@@ -487,7 +502,7 @@ class LSQuoteApi(threading.Thread):
             msg.push(subscribe_item.pack())
             bdata = msg.pack()
 
-            print('Send subscribe message, {bdata=}')
+            print('Send subscribe message, {bdata}')
             self.trans.write(bdata)
 
         asyncio.run_coroutine_threadsafe(_subscribe(subscribe_item), self.loop)
@@ -497,7 +512,7 @@ class LSQuoteApi(threading.Thread):
             msg = Message(MessageType.kSubscribeStreaming)
             bdata = msg.pack()
 
-            print('Send subscribe_streaming message, {bdata=}')
+            print('Send subscribe_streaming message, {bdata}')
             self.trans.write(bdata)
 
         asyncio.run_coroutine_threadsafe(_subscribe_streaming(), self.loop)
@@ -518,7 +533,7 @@ class LSQuoteApi(threading.Thread):
             msg = Message(MessageType.kUnSubscribeAll)
             bdata = msg.pack()
 
-            print('Send unsubscribe_all message, {bdata=}')
+            print('Send unsubscribe_all message, {bdata}')
             self.trans.write(bdata)
 
         asyncio.run_coroutine_threadsafe(_unsubscribe_all(), self.loop)
@@ -528,7 +543,7 @@ class LSQuoteApi(threading.Thread):
             msg = Message(MessageType.kUnSubscribeStreaming)
             bdata = msg.pack()
 
-            print('Send unsubscribe_streaming message, {bdata=}')
+            print('Send unsubscribe_streaming message, {bdata}')
             self.trans.write(bdata)
 
         asyncio.run_coroutine_threadsafe(_unsubscribe_streaming(), self.loop)
@@ -560,24 +575,3 @@ class LSQuoteApi(threading.Thread):
             await self.proto.conn_lost_future
         finally:
             self.trans.close()
-
-
-@asyncio.coroutine
-def do_connect(loop, ip, port, protocol):
-    while True:
-        try:
-            yield from loop.create_connection(lambda: protocol, host=ip, port=port)
-        except OSError as e:
-            print("{}, retrying in 5 seconds")
-            yield from asyncio.sleep(5)
-        else:
-            break
-
-
-def reconnect(loop, protocol, host, port):
-    loop.create_connection(lambda: protocol, host=host, port=port)
-    asyncio.async(do_connect(loop, host, port, protocol))
-
-
-if __name__ == '__main__':
-    pass
